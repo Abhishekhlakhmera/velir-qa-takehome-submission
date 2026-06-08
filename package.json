@@ -1,0 +1,21 @@
+{
+  "name": "velir-qa-takehome",
+  "version": "1.0.0",
+  "description": "Playwright automation framework for QA take-home challenge",
+  "main": "index.js",
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:debug": "playwright test --debug",
+    "test:headed": "playwright test --headed",
+    "test:report": "playwright show-report"
+  },
+  "keywords": ["playwright", "automation", "testing"],
+  "author": "Velir QA",
+  "license": "MIT",
+  "devDependencies": {
+    "@playwright/test": "^1.48.2",
+    "@types/node": "^22.5.5",
+    "typescript": "^5.6.2"
+  }
+}
