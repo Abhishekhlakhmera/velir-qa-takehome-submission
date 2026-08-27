@@ -21,13 +21,17 @@ export class HotelBookingPage {
     await this.page.goto('/', { waitUntil: 'networkidle' });
   }
 
-  async navigateToRoomBooking(roomId: number = 1) {
-    // Navigate to room reservation page with dates
-    const today = new Date();
-    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
-    const checkIn = today.toISOString().split('T')[0];
-    const checkOut = tomorrow.toISOString().split('T')[0];
-    
+  async navigateToRoomBooking(roomId: number = 1, checkIn?: string, checkOut?: string) {
+    // Navigate to room reservation page with dates. Defaults to today/tomorrow;
+    // pass explicit checkIn/checkOut (YYYY-MM-DD) for tests that need specific,
+    // non-colliding, or deliberately invalid date ranges.
+    if (!checkIn || !checkOut) {
+      const today = new Date();
+      const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+      checkIn = checkIn ?? today.toISOString().split('T')[0];
+      checkOut = checkOut ?? tomorrow.toISOString().split('T')[0];
+    }
+
     await this.page.goto(`/reservation/${roomId}?checkin=${checkIn}&checkout=${checkOut}`, {
       waitUntil: 'networkidle'
     });
@@ -76,24 +80,29 @@ export class HotelBookingPage {
   }
 
   async getErrorMessages() {
-    // Check for various alert/error message elements
+    // BUG FIX, two compounding issues in the original implementation:
+    //
+    // 1. This app's Next.js route announcer (#__next-route-announcer__) also
+    //    carries role="alert" and is permanently present (empty) on every page. A
+    //    plain `role=alert` / `[role="alert"]` locator therefore always resolves to
+    //    2+ elements whenever a real validation banner is shown, causing a
+    //    strict-mode violation. Scoping to the banner's `.alert-danger` class (the
+    //    real element is `<div class="alert alert-danger" role="alert">`) avoids
+    //    the announcer entirely.
+    // 2. `locator.isVisible({ timeout })` does NOT poll/retry despite accepting a
+    //    timeout option - it's an immediate, single check. Right after
+    //    submitBooking()'s waitForLoadState('networkidle'), the error banner has
+    //    often not been painted into the DOM yet, so isVisible() returned false
+    //    on that first check and this method returned null even though the error
+    //    appears half a second later. `locator.waitFor({ state: 'visible' })` is
+    //    the version that actually retries until the element shows up.
     try {
-      const alert = this.page.locator('role=alert');
-      if (await alert.isVisible({ timeout: 1000 })) {
-        const text = await alert.textContent();
-        return text && text.trim().length > 0 ? text.trim() : null;
-      }
+      const errorBanner = this.page.locator('[role="alert"].alert-danger').first();
+      await errorBanner.waitFor({ state: 'visible', timeout: 3000 });
+      const text = await errorBanner.textContent();
+      return text && text.trim().length > 0 ? text.trim() : null;
     } catch {}
-    
-    try {
-      // Also check for error list items
-      const errorList = this.page.locator('role=alert li');
-      if (await errorList.first().isVisible({ timeout: 1000 })) {
-        const text = await errorList.first().textContent();
-        return text && text.trim().length > 0 ? text.trim() : null;
-      }
-    } catch {}
-    
+
     return null;
   }
 

@@ -14,8 +14,19 @@ This repository contains a **Playwright automation framework** written in **Type
 │   ├── ui/
 │   │   ├── positive.spec.ts         # Positive UI test (successful booking)
 │   │   └── negative.spec.ts         # Negative UI test (validation failure)
+│   ├── edge-cases/                  # Exploratory / negative test cases (TC1-TC4, TC8-TC10)
+│   │   ├── date-validation.spec.ts      # TC1: checkout<=checkin, TC2: overlapping bookings
+│   │   ├── input-validation.spec.ts     # TC3: invalid email/phone, TC4: required fields
+│   │   ├── boundary-values.spec.ts      # TC8: negative/absurd values, TC9: non-existent IDs
+│   │   └── concurrency.spec.ts          # TC10: race condition on simultaneous bookings
+│   ├── security/                    # Security-focused test cases (TC5-TC7)
+│   │   ├── xss.spec.ts                  # TC5: XSS/script injection
+│   │   ├── admin-auth.spec.ts           # TC6: admin routes without auth
+│   │   └── api-bypass.spec.ts           # TC7: direct API calls bypassing the UI
 │   ├── pages/
-│   │   └── HotelBookingPage.ts      # Page Object Model for booking page
+│   │   ├── HotelBookingPage.ts      # Page Object Model for the reservation page
+│   │   ├── HomePage.ts              # Page Object Model for the homepage widgets
+│   │   └── AdminPage.ts             # Page Object Model for the /admin login page
 │   └── utils/
 │       ├── ApiHelper.ts             # API request utilities
 │       └── TestDataGenerator.ts     # Test data generation utilities
@@ -51,6 +62,83 @@ This repository contains a **Playwright automation framework** written in **Type
 3. **Create Booking** - `[API] Should create a new booking via API`
    - Creates a new booking through the API
    - Verifies the booking is created with correct details
+
+### Exploratory / Edge-Case & Security Suite (10 test cases, tests/edge-cases + tests/security)
+
+Each test case from the original testing instructions maps to its own describe
+block and a `@tcN` tag, with `-UI`/`-API` suffixes marking which layer a given
+test exercises. Every test title is also prefixed with its case number, so the
+list reporter output doubles as a checklist.
+
+| # | Test case | File | Tags |
+|---|---|---|---|
+| TC1 | Checkout date before/equal to check-in | `edge-cases/date-validation.spec.ts` | `@tc1` |
+| TC2 | Overlapping / double-booking the same room | `edge-cases/date-validation.spec.ts` | `@tc2` |
+| TC3 | Invalid email/phone formats | `edge-cases/input-validation.spec.ts` | `@tc3` |
+| TC4 | Required fields skipped | `edge-cases/input-validation.spec.ts` | `@tc4` |
+| TC5 | XSS / script injection | `security/xss.spec.ts` | `@tc5` |
+| TC6 | Admin routes without auth | `security/admin-auth.spec.ts` | `@tc6` |
+| TC7 | Direct API calls bypassing UI rules | `security/api-bypass.spec.ts` | `@tc7` |
+| TC8 | Negative or absurd values | `edge-cases/boundary-values.spec.ts` | `@tc8` |
+| TC9 | Non-existent booking/room ID | `edge-cases/boundary-values.spec.ts` | `@tc9` |
+| TC10 | Concurrent bookings (race condition) | `edge-cases/concurrency.spec.ts` | `@tc10` |
+
+**Run a single test case (any file):**
+```bash
+npx playwright test --grep @tc1
+```
+
+**Run everything UI-only or API-only across all cases:**
+```bash
+npx playwright test --grep @ui
+npx playwright test --grep @api
+```
+
+**Run just the security-focused cases:**
+```bash
+npx playwright test tests/security
+```
+
+**Run against this live site with a sane amount of parallelism** (the suite books
+real rooms on a shared, public demo instance - too many workers at once causes
+navigation timeouts from resource contention, not a test bug):
+```bash
+npx playwright test --workers=4
+```
+
+#### Known bugs found while writing this suite
+
+A handful of tests are annotated with `test.fail()` and a comment explaining the
+defect - the suite stays green, but the annotation documents a real, confirmed
+issue on the live site rather than hiding it. If one of these ever starts
+*passing*, Playwright will flag it as an unexpected pass, which is the signal to
+remove the annotation.
+
+- **TC1** - the homepage's react-datepicker widget accepts a checkout date on or
+  before the selected check-in date with no validation error (the API itself
+  correctly rejects this with 409).
+- **TC2** - when the backend correctly rejects an overlapping booking (409), the
+  React app crashes to a generic "This page couldn't load" screen instead of
+  showing a graceful message.
+- **TC3** - `POST /api/booking/` validates phone number *length* (11-21 chars)
+  but not its format, so an all-letters string of valid length is accepted.
+- **TC8** - `POST /api/booking/` accepts a negative `totalprice` with no
+  validation.
+- **TC9** - `GET /api/room/{id}` returns `500 Internal Server Error` for a
+  non-existent numeric room id instead of `404`; `POST /api/booking/` also
+  accepts a booking against a `roomid` that doesn't exist.
+
+A separate, pre-existing bug was fixed rather than just documented:
+`HotelBookingPage.getErrorMessages()` used `locator.isVisible({ timeout })`,
+which does **not** poll/retry despite accepting a timeout option, and its
+fallback selector (`role=alert li`) wasn't valid Playwright syntax - together
+they made this helper return `null` even when a validation error was clearly
+displayed, so it was fixed to properly wait for the banner (`waitFor({ state:
+'visible' })`) scoped past the app's Next.js route announcer, which also
+carries `role="alert"` and was causing a strict-mode violation. `ApiHelper.
+createBooking()` was also switched from raw `fetch()` to Playwright's
+`APIRequestContext`, since `fetch()` POSTs against this host reproducibly threw
+`UND_ERR_REQ_CONTENT_LENGTH_MISMATCH` in this environment.
 
 ## Prerequisites
 
